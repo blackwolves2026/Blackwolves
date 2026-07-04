@@ -3,10 +3,10 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
 const sampleLevels = [
-  { id: "level-1", title: "Level 1" },
-  { id: "level-2", title: "Level 2" },
-  { id: "level-3", title: "Level 3" },
-  { id: "level-4", title: "Level 4" },
+  { id: "1", title: "Level 1" },
+  { id: "2", title: "Level 2" },
+  { id: "3", title: "Level 3" },
+  { id: "4", title: "Level 4" },
 ]
 
 export default function LevelsPage() {

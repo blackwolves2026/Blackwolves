@@ -26,11 +26,10 @@ export async function POST(request: Request) {
   const title = body?.title?.toString().trim()
   const video_url = body?.video_url?.toString().trim()
   const order_index = Number(body?.order_index ?? 0)
-  const level = body?.level?.toString().trim() ?? "1"
-  const price = Number(body?.price ?? 0)
+  const level_number = Number(body?.level_number)
 
-  if (!title || !video_url) {
-    return NextResponse.json({ error: "Missing title or video_url" }, { status: 400 })
+  if (!title || !video_url || !Number.isFinite(level_number) || level_number <= 0) {
+    return NextResponse.json({ error: "Missing title, video_url, or level_number" }, { status: 400 })
   }
 
   const cookieStore = await cookies()
@@ -76,8 +75,7 @@ export async function POST(request: Request) {
       title,
       video_url,
       order_index,
-      level,
-      price,
+      level: level_number,
     },
   ])
 
@@ -123,7 +121,7 @@ export async function DELETE(request: Request) {
 
   const { data: video, error: videoError } = await supabase
     .from("videos")
-    .select("id, title, video_url, price")
+    .select("id, title, video_url, level")
     .eq("id", videoId)
     .single()
 
@@ -131,63 +129,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 })
   }
 
-  const { data: purchases, error: purchasesError } = await supabase
-    .from("purchases")
-    .select("user_id")
-    .eq("video_id", videoId)
-
-  if (purchasesError) {
-    return NextResponse.json({ error: "Failed to load video purchases" }, { status: 500 })
-  }
-
-  const refundAmount = Number(video.price ?? 0)
-
-  for (const purchase of purchases ?? []) {
-    const userId = purchase.user_id
-    if (!userId) continue
-
-    const { data: wallet, error: walletError } = await supabase
-      .from("wallets")
-      .select("id, balance")
-      .eq("user_id", userId)
-      .single()
-
-    if (walletError || !wallet) {
-      return NextResponse.json({ error: "Failed to load wallet for purchaser" }, { status: 500 })
-    }
-
-    const { error: walletUpdateError } = await supabase
-      .from("wallets")
-      .update({ balance: wallet.balance + refundAmount })
-      .eq("id", wallet.id)
-
-    if (walletUpdateError) {
-      return NextResponse.json({ error: "Failed to refund wallet" }, { status: 500 })
-    }
-
-    const { error: notificationError } = await supabase
-      .from("notifications")
-      .insert([
-        {
-          user_id: userId,
-          message: `تم حذف الفيديو ${video.title || "الفيديو"} واسترجاع ${refundAmount} جنيه إلى محفظتك`,
-          is_read: false,
-        },
-      ])
-
-    if (notificationError) {
-      console.warn("Failed to create refund notification", notificationError)
-    }
-  }
-
-  const { error: deletePurchasesError } = await supabase
-    .from("purchases")
-    .delete()
-    .eq("video_id", videoId)
-
-  if (deletePurchasesError) {
-    return NextResponse.json({ error: deletePurchasesError.message || "Failed to delete video purchases" }, { status: 500 })
-  }
 
   const { error: deleteVideoError } = await supabase
     .from("videos")
@@ -198,7 +139,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: deleteVideoError.message || "Failed to delete video record" }, { status: 500 })
   }
 
-  const videoUrl = new URL(video.video_url)
   const urlParts = video.video_url.split("/upload/")
   const afterUpload = urlParts[1]
   const withoutVersion = afterUpload.replace(/^v\d+\//, "")

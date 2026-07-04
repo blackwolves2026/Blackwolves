@@ -58,7 +58,7 @@ export function AppShell({ children, profile }: { children: ReactNode; profile: 
   // تحديد أيقونات الموبايل (4 أيقونات فقط) بناءً على الرتبة
   const mobileLinks = isAdminRole 
     ? [
-        { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/dashboard", label: "Home", icon: LayoutDashboard },
         { href: "/admin/payments", label: "Payments", icon: Wallet },
         { href: "/notifications", label: "Notifications", icon: Bell },
         { href: "/account", label: "Account", icon: User },
@@ -79,7 +79,7 @@ export function AppShell({ children, profile }: { children: ReactNode; profile: 
         .from("notifications")
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
-        .eq("is_read", false)
+        .or("is_read.eq.false,is_read.is.null")
 
       if (!mounted) return
 

@@ -38,6 +38,11 @@ export default function NotificationsPage() {
         .order("created_at", { ascending: false })
 
       if (mounted) {
+        if (error) {
+          console.error("Notifications load error:", error)
+        } else if (!data || data.length === 0) {
+          console.debug("Notifications query returned no rows for user:", user.id)
+        }
         setItems(error ? [] : data ?? [])
         setLoading(false)
       }

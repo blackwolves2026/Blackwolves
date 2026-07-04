@@ -37,7 +37,7 @@ export async function GET(request: Request) {
 
   const { data: video, error: videoError } = await supabase
     .from("videos")
-    .select("id, course_id, title, video_url")
+    .select("id, course_id, title, video_url, level")
     .eq("id", videoId)
     .single()
 
@@ -49,12 +49,11 @@ export async function GET(request: Request) {
     .from("purchases")
     .select("id")
     .eq("user_id", userData.user.id)
-    .eq("course_id", video.course_id)
-    .eq("video_id", videoId)
+    .eq("level_number", video.level)
     .single()
 
   if (purchaseError || !purchase) {
-    return NextResponse.json({ error: "فيديو مقفول" }, { status: 403 })
+    return NextResponse.json({ error: "Video locked" }, { status: 403 })
   }
 
   const signedUrl = new URL(video.video_url)

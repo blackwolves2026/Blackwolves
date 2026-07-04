@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { Upload, Film, Edit3, Trash2, Save, X } from "lucide-react"
-import { formatCurrency } from "@/lib/format"
 import {
   CLOUDINARY_CHUNK_SIZE,
   loadUploadResumeState,
@@ -26,7 +25,7 @@ interface CourseInfo {
 interface LevelOption {
   value: string
   title: string
-  level_order: number
+  level_number: number
   price: number | null
 }
 
@@ -36,59 +35,50 @@ interface VideoItem {
   video_url: string
   order_index: number
   course_id: string
-  level?: string
-  price?: number | null
+  level?: number
   courses?: { title: string }[]
 }
 
 const COURSE_ID = "01c2ad78-98fd-44cf-8e7a-9a6e195f4062"
 
-const STATIC_LEVELS: LevelOption[] = [
-  { value: "1", title: "Level 1", level_order: 1, price: 0 },
-  { value: "2", title: "Level 2", level_order: 2, price: 0 },
-  { value: "3", title: "Level 3", level_order: 3, price: 0 },
-  { value: "4", title: "Level 4", level_order: 4, price: 0 },
-]
-
 export default function AdminVideosPage() {
   const [title, setTitle] = useState("")
   const [courseName, setCourseName] = useState("VORTEX")
   const [orderIndex, setOrderIndex] = useState("0")
-  const [levelId, setLevelId] = useState(STATIC_LEVELS[0].value)
-  const [price, setPrice] = useState("0")
+  const [levelId, setLevelId] = useState("")
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState("")
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [resumeState, setResumeState] = useState<UploadResumeState | null>(null)
-  const [levels, setLevels] = useState<LevelOption[]>(STATIC_LEVELS)
+  const [levels, setLevels] = useState<LevelOption[]>([])
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [showVideoList, setShowVideoList] = useState(false)
   const [editingVideoId, setEditingVideoId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState("")
-  const [editLevel, setEditLevel] = useState(STATIC_LEVELS[0].value)
+  const [editLevel, setEditLevel] = useState("")
   const [editOrderIndex, setEditOrderIndex] = useState("0")
-  const [editPrice, setEditPrice] = useState("0")
+  const [savingLevelId, setSavingLevelId] = useState<string | null>(null)
 
   const groupedVideos = useMemo(() => {
     const map = new Map<string, VideoItem[]>()
-    STATIC_LEVELS.forEach((level) => map.set(level.value, []))
+    levels.forEach((level) => map.set(level.value, []))
     videos.forEach((video) => {
-      const levelKey = video.level ? String(video.level) : "1"
+      const levelKey = video.level != null ? String(video.level) : "unassigned"
       const bucket = map.get(levelKey) ?? []
       bucket.push(video)
       map.set(levelKey, bucket)
     })
-    for (const level of STATIC_LEVELS) {
+    for (const level of levels) {
       const bucket = map.get(level.value) ?? []
       bucket.sort((a, b) => a.order_index - b.order_index)
       map.set(level.value, bucket)
     }
     return map
-  }, [videos])
+  }, [videos, levels])
 
   async function loadData() {
     const supabase = createClient()
@@ -105,15 +95,36 @@ export default function AdminVideosPage() {
     }
 
     setCourseName(courseData?.title || "VORTEX")
-    setLevels(STATIC_LEVELS)
-    setLevelId(STATIC_LEVELS[0].value)
 
-    const { data: videosData, error: videosError } = await supabase
-      .from("videos")
-      .select("id, title, video_url, order_index, course_id, level, price, courses(title)")
-      .eq("course_id", COURSE_ID)
-      .order("level", { ascending: true })
-      .order("order_index", { ascending: true })
+    const [{ data: levelsData, error: levelsError }, { data: videosData, error: videosError }] = await Promise.all([
+      supabase
+        .from("level_prices")
+        .select("level_number, price")
+        .order("level_number", { ascending: true }),
+      supabase
+        .from("videos")
+        .select("id, title, video_url, order_index, course_id, level, courses(title)")
+        .eq("course_id", COURSE_ID)
+        .order("level", { ascending: true })
+        .order("order_index", { ascending: true }),
+    ])
+
+    if (levelsError) {
+      toast.error("Failed to load levels")
+      setLevels([])
+    } else {
+      setLevels(
+        (levelsData || []).map((item: any) => ({
+          value: String(item.level_number),
+          title: `Level ${item.level_number}`,
+          level_number: item.level_number,
+          price: Number(item.price ?? 0),
+        })),
+      )
+      if ((levelsData?.length ?? 0) > 0) {
+        setLevelId(String(levelsData![0].level_number))
+      }
+    }
 
     if (videosError) {
       toast.error("Failed to load videos")
@@ -149,8 +160,7 @@ export default function AdminVideosPage() {
     setVideoFile(null)
     setVideoUrl("")
     setOrderIndex("0")
-    setLevelId(STATIC_LEVELS[0].value)
-    setPrice("0")
+    setLevelId(levels[0]?.value ?? "")
     setUploadError(null)
     setUploadProgress(0)
     setResumeState(null)
@@ -167,11 +177,6 @@ export default function AdminVideosPage() {
 
     if (!levelId) {
       return toast.error("Please choose a level")
-    }
-
-    const parsedPrice = Number(price)
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return toast.error("Please enter a valid price")
     }
 
     setLoading(true)
@@ -199,8 +204,7 @@ export default function AdminVideosPage() {
           title: title.trim(),
           video_url: videoUrl,
           order_index: Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0,
-          level: levelId,
-          price: parsedPrice,
+          level_number: Number(levelId),
         }),
       })
 
@@ -230,9 +234,8 @@ export default function AdminVideosPage() {
     setEditingVideoId(video.id)
     setSelectedEditVideo(video)
     setEditTitle(video.title)
-    setEditLevel(video.level ?? STATIC_LEVELS[0].value)
+    setEditLevel(video.level != null ? String(video.level) : levels[0]?.value ?? "")
     setEditOrderIndex(String(video.order_index ?? 0))
-    setEditPrice(String(video.price ?? 0))
   }
 
   const handleCancelEdit = () => {
@@ -250,20 +253,14 @@ export default function AdminVideosPage() {
       return toast.error("Please enter a valid order index")
     }
 
-    const parsedPrice = Number(editPrice)
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return toast.error("Please enter a valid price")
-    }
-
     setBusy(true)
     try {
       const { error } = await createClient()
         .from("videos")
         .update({
           title: editTitle.trim(),
-          level: editLevel,
+          level: Number(editLevel),
           order_index: parsedOrder,
-          price: parsedPrice,
         })
         .eq("id", editingVideoId)
 
@@ -312,6 +309,79 @@ export default function AdminVideosPage() {
           <div className="flex items-center gap-3">
             <Film className="size-6 text-primary" />
             <div>
+              <h1 className="text-3xl font-extrabold">Level Pricing</h1>
+              <p className="text-muted-foreground">Manage the purchase price for each level. Students buy a whole level and unlock all its videos.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {levels.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No levels configured yet.</div>
+            ) : (
+              levels.map((level) => (
+                <div key={level.value} className="grid gap-2 rounded-2xl border border-border/50 bg-background p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm text-muted-foreground">Level {level.level_number}</div>
+                      <div className="font-semibold">{level.title}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`level-price-${level.value}`}
+                        type="number"
+                        min={0}
+                        value={String(level.price ?? 0)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setLevels((current) =>
+                            current.map((item) =>
+                              item.value === level.value ? { ...item, price: Number(value) } : item,
+                            ),
+                          )
+                        }}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          setSavingLevelId(level.value)
+                          try {
+                            const parsedPrice = Number(level.price ?? 0)
+                            if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+                              throw new Error("Please enter a valid price")
+                            }
+
+                            const { error } = await createClient()
+                              .from("level_prices")
+                              .update({ price: parsedPrice })
+                              .eq("level_number", Number(level.value))
+
+                            if (error) throw error
+                            toast.success("Level price updated")
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "Failed to update price")
+                          } finally {
+                            setSavingLevelId(null)
+                          }
+                        }}
+                        disabled={savingLevelId === level.value}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="glass border-border/50 p-6">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Film className="size-6 text-primary" />
+            <div>
               <h1 className="text-3xl font-extrabold">Upload new video</h1>
               <p className="text-muted-foreground">Upload a video from your device — it will be saved to Cloudinary and then to Supabase.</p>
             </div>
@@ -345,27 +415,12 @@ export default function AdminVideosPage() {
                     ) : (
                       levels.map((level) => (
                         <SelectItem key={level.value} value={level.value}>
-                          Level {level.level_order}: {level.title}
+                          Level {level.level_number}: {level.title}
                         </SelectItem>
                       ))
                     )}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="price">Video price</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  inputMode="decimal"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  min={0}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Price appears in the video data and can be 0 if not required.
-                </p>
               </div>
             </div>
 
@@ -449,7 +504,7 @@ export default function AdminVideosPage() {
               <div className="text-sm text-muted-foreground">No uploaded videos yet.</div>
             ) : (
               <div className="space-y-4">
-                {STATIC_LEVELS.map((level) => {
+                {levels.map((level) => {
                   const levelVideos = groupedVideos.get(level.value) ?? []
                   return (
                     <Card key={level.value} className="border-border/50 p-4">
@@ -482,27 +537,23 @@ export default function AdminVideosPage() {
                                             />
                                           </div>
                                           <div>
-                                            <Label htmlFor="editPrice">Price</Label>
-                                            <Input
-                                              id="editPrice"
-                                              type="number"
-                                              value={editPrice}
-                                              min={0}
-                                              onChange={(e) => setEditPrice(e.target.value)}
-                                            />
-                                          </div>
-                                          <div>
                                             <Label htmlFor="editLevel">Level</Label>
                                             <Select value={editLevel} onValueChange={(value) => setEditLevel(value)}>
                                               <SelectTrigger>
                                                 <SelectValue placeholder="Choose level" />
                                               </SelectTrigger>
                                               <SelectContent position="popper">
-                                                {STATIC_LEVELS.map((levelOption) => (
-                                                  <SelectItem key={levelOption.value} value={levelOption.value}>
-                                                    Level {levelOption.level_order}: {levelOption.title}
+                                                {levels.length === 0 ? (
+                                                  <SelectItem value="none" disabled>
+                                                    No levels
                                                   </SelectItem>
-                                                ))}
+                                                ) : (
+                                                  levels.map((levelOption) => (
+                                                    <SelectItem key={levelOption.value} value={levelOption.value}>
+                                                      Level {levelOption.level_number}: {levelOption.title}
+                                                    </SelectItem>
+                                                  ))
+                                                )}
                                               </SelectContent>
                                             </Select>
                                           </div>
@@ -520,7 +571,9 @@ export default function AdminVideosPage() {
                                       ) : (
                                         <>
                                           <div className="font-semibold text-lg">{video.title}</div>
-                                          <div className="text-sm text-muted-foreground">Price: {formatCurrency(video.price ?? 0)}</div>
+                                          <div className="text-sm text-muted-foreground">
+                                            Level: {levels.find((item) => item.value === String(video.level))?.title ?? "Unknown"}
+                                          </div>
                                           <div className="text-sm text-muted-foreground">Order: {video.order_index}</div>
                                         </>
                                       )}

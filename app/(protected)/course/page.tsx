@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
-import CourseVideoSection, { type CourseVideoItem } from "@/components/course-video-section"
+import CourseVideoSection, { type CourseVideoItem, type LevelInfo } from "@/components/course-video-section"
 
 const COURSE_ID = "01c2ad78-98fd-44cf-8e7a-9a6e195f4062"
 
@@ -13,30 +13,44 @@ export default async function CoursePage() {
 
   const { data: videos, error: videosError } = await supabase
     .from("videos")
-    .select("id, title, order_index, level, price")
+    .select("id, title, order_index, level")
     .eq("course_id", COURSE_ID)
     .order("order_index", { ascending: true })
 
-  const { data: userData, error: userError } = await supabase.auth.getUser()
+  const { data: levels, error: levelsError } = await supabase
+    .from("level_prices")
+    .select("level_number, price")
+    .order("level_number", { ascending: true })
+
+  const { data: userData } = await supabase.auth.getUser()
   const userId = userData?.user?.id
 
   const courseVideos: CourseVideoItem[] = videos ?? []
+  const courseLevels: LevelInfo[] =
+    (levels ?? []).map((level) => ({
+      id: String(level.level_number),
+      title: `Level ${level.level_number}`,
+      level_number: level.level_number,
+      price: Number(level.price ?? 0),
+    }))
 
-  const { data: purchases, error: purchasesError } = await supabase
+  const { data: purchases } = await supabase
     .from("purchases")
-    .select("video_id")
+    .select("level_number")
     .eq("user_id", userId ?? "")
 
   if (courseError || !course) {
     throw new Error("Failed to load course data")
   }
 
-  if (videosError) {
-    throw new Error("Failed to load videos")
+  if (videosError || levelsError) {
+    throw new Error("Failed to load course content")
   }
 
-  const purchasedVideoIds = purchases
-    ? purchases.map((purchase) => String((purchase as { video_id?: string }).video_id)).filter((id): id is string => Boolean(id))
+  const purchasedLevelIds = purchases
+    ? purchases
+        .map((purchase) => String((purchase as { level_number?: number }).level_number))
+        .filter((id): id is string => Boolean(id))
     : []
 
   return (
@@ -56,7 +70,11 @@ export default async function CoursePage() {
           </div>
         </div>
 
-        <CourseVideoSection videos={courseVideos} purchasedVideoIds={purchasedVideoIds} />
+        <CourseVideoSection
+          videos={courseVideos}
+          levels={courseLevels}
+          purchasedLevelIds={purchasedLevelIds}
+        />
       </div>
     </div>
   )

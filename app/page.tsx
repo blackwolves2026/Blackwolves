@@ -18,7 +18,7 @@ const features = [
 ]
 
 const stats = [
-  { num: "12,000+", label: "Members" },
+  { num: "500+", label: "Members" },
   { num: "98%", label: "Satisfaction Rate" },
   { num: "50+", label: "Videos" },
   { num: "6", label: "Years of Experience" },
@@ -150,7 +150,7 @@ export default function LandingPage() {
                   The only course on the platform
                 </div>
                 <h2 className="text-3xl md:text-5xl font-extrabold">
-                  VORTEX <span className="text-gradient">Course</span>
+                  BlackWolves Courses
                 </h2>
                 <p className="text-muted-foreground leading-relaxed">
                   A complete curriculum of four sequential levels that takes you from fundamentals to full mastery, with personalized guidance from instructor Ziad Ahmed.

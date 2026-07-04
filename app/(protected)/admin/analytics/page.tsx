@@ -30,13 +30,13 @@ export default async function AdminAnalyticsPage() {
   const { data: videosData } = await service.from("videos").select("id")
   const totalVideos = (videosData || []).length
 
-  const { data: purchasesData } = await service.from("purchases").select("video_id")
-  const videoIds = Array.from(new Set((purchasesData || []).map((p: any) => p.video_id).filter(Boolean)))
+  const { data: purchasesData } = await service.from("purchases").select("level_number")
+  const levelNumbers = Array.from(new Set((purchasesData || []).map((p: any) => p.level_number).filter(Boolean)))
   let totalSales = 0
-  if (videoIds.length > 0) {
-    const { data: videosPrices } = await service.from("videos").select("id, price").in("id", videoIds)
-    const priceMap = new Map((videosPrices || []).map((v: any) => [v.id, Number(v.price ?? 0)]))
-    totalSales = (purchasesData || []).reduce((sum: number, p: any) => sum + (priceMap.get(p.video_id) || 0), 0)
+  if (levelNumbers.length > 0) {
+    const { data: levelPrices } = await service.from("level_prices").select("level_number, price").in("level_number", levelNumbers)
+    const priceMap = new Map((levelPrices || []).map((l: any) => [l.level_number, Number(l.price ?? 0)]))
+    totalSales = (purchasesData || []).reduce((sum: number, p: any) => sum + (priceMap.get(p.level_number) || 0), 0)
   }
 
   const { data: walletsData } = await service.from("wallets").select("balance")
