@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { Upload, Film, Edit3, Trash2, Save, X } from "lucide-react"
@@ -56,6 +55,7 @@ export default function AdminVideosPage() {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [pageReady, setPageReady] = useState(false)
   const [showVideoList, setShowVideoList] = useState(false)
   const [editingVideoId, setEditingVideoId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState("")
@@ -81,61 +81,73 @@ export default function AdminVideosPage() {
   }, [videos, levels])
 
   async function loadData() {
-    const supabase = createClient()
+    try {
+      const supabase = createClient()
 
-    const { data: courseData, error: courseError } = await supabase
-      .from("courses")
-      .select("id, title")
-      .eq("id", COURSE_ID)
-      .maybeSingle()
+      const { data: courseData, error: courseError } = await supabase
+        .from("courses")
+        .select("id, title")
+        .eq("id", COURSE_ID)
+        .maybeSingle()
 
-    if (courseError) {
-      toast.error("Failed to load course data")
-      return
-    }
-
-    setCourseName(courseData?.title || "VORTEX")
-
-    const [{ data: levelsData, error: levelsError }, { data: videosData, error: videosError }] = await Promise.all([
-      supabase
-        .from("level_prices")
-        .select("level_number, price")
-        .order("level_number", { ascending: true }),
-      supabase
-        .from("videos")
-        .select("id, title, video_url, order_index, course_id, level, courses(title)")
-        .eq("course_id", COURSE_ID)
-        .order("level", { ascending: true })
-        .order("order_index", { ascending: true }),
-    ])
-
-    if (levelsError) {
-      toast.error("Failed to load levels")
-      setLevels([])
-    } else {
-      setLevels(
-        (levelsData || []).map((item: any) => ({
-          value: String(item.level_number),
-          title: `Level ${item.level_number}`,
-          level_number: item.level_number,
-          price: Number(item.price ?? 0),
-        })),
-      )
-      if ((levelsData?.length ?? 0) > 0) {
-        setLevelId(String(levelsData![0].level_number))
+      if (courseError) {
+        console.error("Failed to load course data", courseError)
+        toast.error("Failed to load course data")
+        return
       }
-    }
 
-    if (videosError) {
-      toast.error("Failed to load videos")
-      setVideos([])
-    } else {
-      setVideos(videosData || [])
+      setCourseName(courseData?.title || "VORTEX")
+
+      const [{ data: levelsData, error: levelsError }, { data: videosData, error: videosError }] = await Promise.all([
+        supabase
+          .from("level_prices")
+          .select("level_number, price")
+          .order("level_number", { ascending: true }),
+        supabase
+          .from("videos")
+          .select("id, title, video_url, order_index, course_id, level, courses(title)")
+          .eq("course_id", COURSE_ID)
+          .order("level", { ascending: true })
+          .order("order_index", { ascending: true }),
+      ])
+
+      if (levelsError) {
+        console.error("Failed to load levels", levelsError)
+        setLevels([])
+      } else {
+        setLevels(
+          (levelsData || []).map((item: any) => ({
+            value: String(item.level_number),
+            title: `Level ${item.level_number}`,
+            level_number: item.level_number,
+            price: Number(item.price ?? 0),
+          })),
+        )
+        if ((levelsData?.length ?? 0) > 0) {
+          setLevelId(String(levelsData[0].level_number))
+        }
+      }
+
+      if (videosError) {
+        console.error("Failed to load videos", videosError)
+        setVideos([])
+      } else {
+        setVideos(videosData || [])
+      }
+    } catch (error) {
+      console.error("Admin videos page load failed", error)
+      toast.error("Unable to load admin videos page")
     }
   }
 
   useEffect(() => {
-    loadData()
+    const run = async () => {
+      setPageReady(false)
+      await loadData()
+      setPageReady(true)
+    }
+
+    void run()
   }, [])
 
   async function handleVideoSelect(file: File | null) {
@@ -303,200 +315,214 @@ export default function AdminVideosPage() {
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <Card className="glass border-border/50 p-6">
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Film className="size-6 text-primary" />
+    <div className="w-full max-w-4xl space-y-6">
+      {!pageReady && (
+        <Card className="glass border-border/50 p-4 sm:p-6">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-3xl font-extrabold">Level Pricing</h1>
-              <p className="text-muted-foreground">Manage the purchase price for each level. Students buy a whole level and unlock all its videos.</p>
+              <h1 className="text-xl font-semibold">Loading admin videos</h1>
+              <p className="text-sm text-muted-foreground">Preparing the page and loading your levels.</p>
             </div>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
+        </Card>
+      )}
 
-          <div className="grid gap-4">
-            {levels.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No levels configured yet.</div>
-            ) : (
-              levels.map((level) => (
-                <div key={level.value} className="grid gap-2 rounded-2xl border border-border/50 bg-background p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-sm text-muted-foreground">Level {level.level_number}</div>
-                      <div className="font-semibold">{level.title}</div>
+      {pageReady && (
+        <>
+          <Card className="glass border-border/50 p-4 sm:p-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Film className="size-6 text-primary" />
+                <div>
+                  <h1 className="text-2xl font-extrabold sm:text-3xl">Level Pricing</h1>
+                  <p className="text-sm text-muted-foreground sm:text-base">Manage the purchase price for each level. Students buy a whole level and unlock all its videos.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                {levels.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No levels configured yet.</div>
+                ) : (
+                  levels.map((level) => (
+                    <div key={level.value} className="rounded-2xl border border-border/50 bg-background p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-sm text-muted-foreground">Level {level.level_number}</div>
+                          <div className="font-semibold">{level.title}</div>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Input
+                            id={`level-price-${level.value}`}
+                            type="number"
+                            min={0}
+                            className="w-full sm:min-w-[140px]"
+                            value={String(level.price ?? 0)}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              setLevels((current) =>
+                                current.map((item) =>
+                                  item.value === level.value ? { ...item, price: Number(value) } : item,
+                                ),
+                              )
+                            }}
+                          />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            onClick={async () => {
+                              setSavingLevelId(level.value)
+                              try {
+                                const parsedPrice = Number(level.price ?? 0)
+                                if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+                                  throw new Error("Please enter a valid price")
+                                }
+
+                                const { error } = await createClient()
+                                  .from("level_prices")
+                                  .update({ price: parsedPrice })
+                                  .eq("level_number", Number(level.value))
+
+                                if (error) throw error
+                                toast.success("Level price updated")
+                              } catch (err) {
+                                toast.error(err instanceof Error ? err.message : "Failed to update price")
+                              } finally {
+                                setSavingLevelId(null)
+                              }
+                            }}
+                            disabled={savingLevelId === level.value}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id={`level-price-${level.value}`}
-                        type="number"
-                        min={0}
-                        value={String(level.price ?? 0)}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          setLevels((current) =>
-                            current.map((item) =>
-                              item.value === level.value ? { ...item, price: Number(value) } : item,
-                            ),
-                          )
-                        }}
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={async () => {
-                          setSavingLevelId(level.value)
-                          try {
-                            const parsedPrice = Number(level.price ?? 0)
-                            if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-                              throw new Error("Please enter a valid price")
-                            }
+                  ))
+                )}
+              </div>
+            </div>
+          </Card>
 
-                            const { error } = await createClient()
-                              .from("level_prices")
-                              .update({ price: parsedPrice })
-                              .eq("level_number", Number(level.value))
+          <Card className="glass border-border/50 p-4 sm:p-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Film className="size-6 text-primary" />
+                <div>
+                  <h1 className="text-2xl font-extrabold sm:text-3xl">Upload new video</h1>
+                  <p className="text-sm text-muted-foreground sm:text-base">Upload a video from your device — it will be saved to Cloudinary and then to Supabase.</p>
+                </div>
+              </div>
 
-                            if (error) throw error
-                            toast.success("Level price updated")
-                          } catch (err) {
-                            toast.error(err instanceof Error ? err.message : "Failed to update price")
-                          } finally {
-                            setSavingLevelId(null)
-                          }
-                        }}
-                        disabled={savingLevelId === level.value}
-                      >
-                        Save
-                      </Button>
-                    </div>
+              <div className="grid gap-4">
+                <div>
+                  <Label htmlFor="course">Course</Label>
+                  <div className="rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-muted-foreground">
+                    {courseName}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Card>
 
-      <Card className="glass border-border/50 p-6">
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Film className="size-6 text-primary" />
-            <div>
-              <h1 className="text-3xl font-extrabold">Upload new video</h1>
-              <p className="text-muted-foreground">Upload a video from your device — it will be saved to Cloudinary and then to Supabase.</p>
-            </div>
-          </div>
+                <div>
+                  <Label htmlFor="title">Video title</Label>
+                  <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
+                </div>
 
-          <div className="grid gap-4">
-            <div>
-              <Label htmlFor="course">Course</Label>
-              <div className="rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-muted-foreground">
-                {courseName}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="title">Video title</Label>
-              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="level">Level</Label>
-                <Select value={levelId} onValueChange={(value) => setLevelId(value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose level" />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
+                <div>
+                  <Label htmlFor="level">Level</Label>
+                  <select
+                    id="level"
+                    value={levelId}
+                    onChange={(e) => setLevelId(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none"
+                  >
                     {levels.length === 0 ? (
-                      <SelectItem value="none" disabled>
-                        No levels
-                      </SelectItem>
+                      <option value="">No levels</option>
                     ) : (
                       levels.map((level) => (
-                        <SelectItem key={level.value} value={level.value}>
+                        <option key={level.value} value={level.value}>
                           Level {level.level_number}: {level.title}
-                        </SelectItem>
+                        </option>
                       ))
                     )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="orderIndex">Display order</Label>
-                <Input
-                  id="orderIndex"
-                  type="number"
-                  value={orderIndex}
-                  onChange={(e) => setOrderIndex(e.target.value)}
-                  min={0}
-                />
-              </div>
-              <div>
-                <Label htmlFor="videoFile">Video file</Label>
-                <Input
-                  id="videoFile"
-                  type="file"
-                  accept="video/mp4,video/quicktime,video/x-msvideo,video/*"
-                  onChange={(e) => handleVideoSelect(e.target.files?.[0] ?? null)}
-                />
-                {videoFile && (
-                  <div className="mt-2 text-sm text-muted-foreground">Selected: {videoFile.name}</div>
-                )}
-                {uploading && <div className="mt-2 text-sm text-primary">Uploading video to Cloudinary...</div>}
-                {videoUrl && !uploading && (
-                  <div className="mt-2 text-sm text-foreground">Uploaded: {videoUrl}</div>
-                )}
-                {uploadError && (
-                  <div className="mt-2 text-sm text-destructive">Video upload error: {uploadError}</div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={handleAdd} disabled={loading || busy}>
-                {loading ? "Uploading video..." : "Upload video"}
-              </Button>
-              <Button variant="outline" disabled={busy} onClick={() => resetForm()}>
-                Clear form
-              </Button>
-              <Button variant="secondary" onClick={() => setShowVideoList((current) => !current)}>
-                {showVideoList ? "Hide videos" : "Show videos"}
-              </Button>
-            </div>
-
-            {uploading && (
-              <div className="space-y-2">
-                <div className="text-sm text-primary">Uploading... {uploadProgress}%</div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted/50">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${uploadProgress}%` }} />
+                  </select>
                 </div>
-              </div>
-            )}
 
-            {!uploading && resumeState && videoFile && (
-              <div className="flex flex-wrap gap-2 items-center rounded-xl border border-yellow-400/40 bg-yellow-50 p-4 text-sm text-yellow-900">
-                <div>Uploaded {resumeState.nextChunk} chunk(s) / {Math.ceil(videoFile.size / CLOUDINARY_CHUNK_SIZE)}.</div>
-                <Button variant="outline" disabled={busy} onClick={handleAdd}>
-                  Resume upload
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="orderIndex">Display order</Label>
+                    <Input
+                      id="orderIndex"
+                      type="number"
+                      value={orderIndex}
+                      onChange={(e) => setOrderIndex(e.target.value)}
+                      min={0}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="videoFile">Video file</Label>
+                    <Input
+                      id="videoFile"
+                      type="file"
+                      accept="video/mp4,video/quicktime,video/x-msvideo,video/*"
+                      onChange={(e) => handleVideoSelect(e.target.files?.[0] ?? null)}
+                    />
+                    {videoFile && (
+                      <div className="mt-2 text-sm text-muted-foreground">Selected: {videoFile.name}</div>
+                    )}
+                    {uploading && <div className="mt-2 text-sm text-primary">Uploading video to Cloudinary...</div>}
+                    {videoUrl && !uploading && (
+                      <div className="mt-2 text-sm text-foreground">Uploaded: {videoUrl}</div>
+                    )}
+                    {uploadError && (
+                      <div className="mt-2 text-sm text-destructive">Video upload error: {uploadError}</div>
+                    )}
+                  </div>
+                </div>
 
-      {showVideoList && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Button onClick={handleAdd} disabled={loading || busy} className="w-full sm:w-auto">
+                    {loading ? "Uploading video..." : "Upload video"}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={() => resetForm()} className="w-full sm:w-auto">
+                    Clear form
+                  </Button>
+                  <Button variant="secondary" onClick={() => setShowVideoList((current) => !current)} className="w-full sm:w-auto">
+                    {showVideoList ? "Hide videos" : "Show videos"}
+                  </Button>
+                </div>
+
+                {uploading && (
+                  <div className="space-y-2">
+                    <div className="text-sm text-primary">Uploading... {uploadProgress}%</div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted/50">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {!uploading && resumeState && videoFile && (
+                  <div className="flex flex-wrap gap-2 items-center rounded-xl border border-yellow-400/40 bg-yellow-50 p-4 text-sm text-yellow-900">
+                    <div>Uploaded {resumeState.nextChunk} chunk(s) / {Math.ceil(videoFile.size / CLOUDINARY_CHUNK_SIZE)}.</div>
+                    <Button variant="outline" disabled={busy} onClick={handleAdd}>
+                      Resume upload
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {pageReady && showVideoList && (
         <Card className="glass border-border/50 p-6">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <Upload className="size-6 text-primary" />
               <div>
-                <h2 className="text-2xl font-semibold">Uploaded videos</h2>
-                <p className="text-muted-foreground">This is the list of videos currently in the system.</p>
+                <h2 className="text-xl font-semibold sm:text-2xl">Uploaded videos</h2>
+                <p className="text-sm text-muted-foreground sm:text-base">This is the list of videos currently in the system.</p>
               </div>
             </div>
 
@@ -538,24 +564,22 @@ export default function AdminVideosPage() {
                                           </div>
                                           <div>
                                             <Label htmlFor="editLevel">Level</Label>
-                                            <Select value={editLevel} onValueChange={(value) => setEditLevel(value)}>
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Choose level" />
-                                              </SelectTrigger>
-                                              <SelectContent position="popper">
-                                                {levels.length === 0 ? (
-                                                  <SelectItem value="none" disabled>
-                                                    No levels
-                                                  </SelectItem>
-                                                ) : (
-                                                  levels.map((levelOption) => (
-                                                    <SelectItem key={levelOption.value} value={levelOption.value}>
-                                                      Level {levelOption.level_number}: {levelOption.title}
-                                                    </SelectItem>
-                                                  ))
-                                                )}
-                                              </SelectContent>
-                                            </Select>
+                                            <select
+                                              id="editLevel"
+                                              value={editLevel}
+                                              onChange={(e) => setEditLevel(e.target.value)}
+                                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none"
+                                            >
+                                              {levels.length === 0 ? (
+                                                <option value="">No levels</option>
+                                              ) : (
+                                                levels.map((levelOption) => (
+                                                  <option key={levelOption.value} value={levelOption.value}>
+                                                    Level {levelOption.level_number}: {levelOption.title}
+                                                  </option>
+                                                ))
+                                              )}
+                                            </select>
                                           </div>
                                           <div>
                                             <Label htmlFor="editOrderIndex">Order</Label>
