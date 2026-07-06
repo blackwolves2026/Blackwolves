@@ -464,7 +464,7 @@ export default function AdminVideosPage() {
                     <Input
                       id="videoFile"
                       type="file"
-                      accept="video/mp4,video/quicktime,video/x-msvideo,video/*"
+                      accept="video/*"
                       onChange={(e) => handleVideoSelect(e.target.files?.[0] ?? null)}
                     />
                     {videoFile && (

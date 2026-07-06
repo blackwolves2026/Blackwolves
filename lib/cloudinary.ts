@@ -20,7 +20,7 @@ export const CLOUDINARY_CLOUD_NAME =
 export const CLOUDINARY_UPLOAD_PRESET =
   normalizeUploadPreset(process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET) ||
   DEFAULT_CLOUDINARY_UPLOAD_PRESET
-export const CLOUDINARY_VIDEO_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`
+export const CLOUDINARY_VIDEO_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`
 export const CLOUDINARY_CHUNK_SIZE = 10 * 1024 * 1024
 const UPLOAD_RESUME_PREFIX = "vortex_video_upload_resume_"
 
@@ -88,9 +88,12 @@ export async function uploadVideoToCloudinary(
     const formData = new FormData()
     formData.append("file", chunk)
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET)
-    formData.append("resource_type", "video")
     formData.append("chunk_size", String(CLOUDINARY_CHUNK_SIZE))
     formData.append("chunk_number", String(currentChunk + 1))
+    formData.append("filename", file.name)
+    if (file.type) {
+      formData.append("content_type", file.type)
+    }
     if (uploadId) {
       formData.append("upload_id", uploadId)
     }
