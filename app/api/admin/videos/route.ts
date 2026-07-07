@@ -129,7 +129,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Video not found" }, { status: 404 })
   }
 
-
   const { error: deleteVideoError } = await supabase
     .from("videos")
     .delete()
