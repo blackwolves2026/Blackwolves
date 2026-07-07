@@ -13,7 +13,6 @@ import {
   loadUploadResumeState,
   removeUploadResumeState,
   type UploadResumeState,
-  uploadVideoToCloudinary,
 } from "@/lib/cloudinary"
 
 interface CourseInfo {
@@ -161,6 +160,32 @@ export default function AdminVideosPage() {
       return
     }
 
+    const supportedTypes = [
+      "video/mp4",
+      "video/quicktime",
+      "video/x-m4v",
+      "video/webm",
+      "video/x-msvideo",
+      "video/x-matroska",
+      "video/3gpp",
+      "video/3gpp2",
+    ]
+    const fileName = file.name.toLowerCase()
+    const isSupportedExtension = /\.(mp4|mov|m4v|webm|avi|mkv|3gp|3g2)$/i.test(fileName)
+    const isSupportedType = supportedTypes.includes(file.type) || isSupportedExtension
+
+    if (!isSupportedType) {
+      setUploadError("Unsupported video format. Please choose an MP4, MOV, M4V, WEBM, AVI, MKV, 3GP, or 3G2 file.")
+      setVideoFile(null)
+      return
+    }
+
+    if (file.size > 200 * 1024 * 1024) {
+      setUploadError("File is too large. Please choose a video smaller than 200MB.")
+      setVideoFile(null)
+      return
+    }
+
     const saved = loadUploadResumeState(file)
     if (saved) {
       setResumeState(saved)
@@ -187,6 +212,10 @@ export default function AdminVideosPage() {
       return toast.error("Please choose a video file")
     }
 
+    if (videoFile.size > 200 * 1024 * 1024) {
+      return toast.error("File is too large. Please choose a video smaller than 200MB.")
+    }
+
     if (!levelId) {
       return toast.error("Please choose a level")
     }
@@ -198,31 +227,37 @@ export default function AdminVideosPage() {
     setUploadProgress(0)
 
     try {
-      const result = await uploadVideoToCloudinary(videoFile, (progress) => {
-        setUploadProgress(progress)
-      }, resumeState ?? loadUploadResumeState(videoFile) ?? undefined)
+      const formData = new FormData()
+      formData.append("title", title.trim())
+      formData.append("order_index", String(Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0))
+      formData.append("level_number", String(Number(levelId)))
+      formData.append("file", videoFile)
 
-      if (!result.secure_url) {
-        throw new Error("Failed to obtain video URL from Cloudinary")
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", "/api/admin/videos")
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentage = Math.min(100, Math.round((event.loaded / event.total) * 100))
+          setUploadProgress(percentage)
+        }
       }
 
-      const videoUrl = result.secure_url
-      const response = await fetch("/api/admin/videos", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          video_url: videoUrl,
-          order_index: Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0,
-          level_number: Number(levelId),
-        }),
+      const response = await new Promise<{ ok: boolean; payload: any }>((resolve, reject) => {
+        xhr.onload = () => {
+          try {
+            const payload = xhr.responseText ? JSON.parse(xhr.responseText) : {}
+            resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload })
+          } catch {
+            resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload: {} })
+          }
+        }
+        xhr.onerror = () => reject(new Error("Network error during upload"))
+        xhr.send(formData)
       })
 
-      const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to save video in the system")
+        throw new Error(response.payload?.error || "Failed to save video in the system")
       }
 
       toast.success("Video uploaded and saved")

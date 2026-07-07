@@ -22,14 +22,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing Supabase env vars" }, { status: 500 })
   }
 
-  const body = await request.json()
-  const title = body?.title?.toString().trim()
-  const video_url = body?.video_url?.toString().trim()
-  const order_index = Number(body?.order_index ?? 0)
-  const level_number = Number(body?.level_number)
+  const formData = await request.formData()
+  const title = String(formData.get("title") ?? "").trim()
+  const orderIndex = Number(formData.get("order_index") ?? 0)
+  const levelNumber = Number(formData.get("level_number"))
+  const file = formData.get("file")
 
-  if (!title || !video_url || !Number.isFinite(level_number) || level_number <= 0) {
-    return NextResponse.json({ error: "Missing title, video_url, or level_number" }, { status: 400 })
+  if (!title || !file || !(file instanceof File) || !Number.isFinite(levelNumber) || levelNumber <= 0) {
+    return NextResponse.json({ error: "Missing title, file, or level_number" }, { status: 400 })
   }
 
   const cookieStore = await cookies()
@@ -69,13 +69,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
+  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "vortex_upload"
+  const cloudinaryUploadData = new FormData()
+  cloudinaryUploadData.append("file", file)
+  cloudinaryUploadData.append("resource_type", "video")
+  cloudinaryUploadData.append("filename", file.name || "video")
+  cloudinaryUploadData.append("content_type", file.type || "video/mp4")
+  cloudinaryUploadData.append("upload_preset", uploadPreset)
+
+  const cloudinaryResponse = await fetch(`${CLOUDINARY_API_BASE}/upload`, {
+    method: "POST",
+    body: cloudinaryUploadData,
+  })
+
+  const cloudinaryResult = await cloudinaryResponse.json()
+  if (!cloudinaryResponse.ok || !cloudinaryResult?.secure_url) {
+    return NextResponse.json(
+      { error: cloudinaryResult?.error?.message || "Failed to upload video to Cloudinary" },
+      { status: 500 },
+    )
+  }
+
   const { error } = await supabase.from("videos").insert([
     {
       course_id: "01c2ad78-98fd-44cf-8e7a-9a6e195f4062",
       title,
-      video_url,
-      order_index,
-      level: level_number,
+      video_url: cloudinaryResult.secure_url,
+      order_index: Number.isFinite(orderIndex) ? orderIndex : 0,
+      level: levelNumber,
     },
   ])
 
