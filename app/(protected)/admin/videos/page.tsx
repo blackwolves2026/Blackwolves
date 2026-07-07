@@ -243,21 +243,25 @@ export default function AdminVideosPage() {
         }
       }
 
-      const response = await new Promise<{ ok: boolean; payload: any }>((resolve, reject) => {
+      const response = await new Promise<{ ok: boolean; payload: any; status: number; rawText: string }>((resolve, reject) => {
         xhr.onload = () => {
+          const rawText = xhr.responseText || ""
+          let payload: any = {}
+
           try {
-            const payload = xhr.responseText ? JSON.parse(xhr.responseText) : {}
-            resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload })
+            payload = rawText ? JSON.parse(rawText) : {}
           } catch {
-            resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload: {} })
+            payload = { error: rawText || "The server returned an empty or invalid response." }
           }
+
+          resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload, status: xhr.status, rawText })
         }
         xhr.onerror = () => reject(new Error("Network error during upload"))
         xhr.send(formData)
       })
 
       if (!response.ok) {
-        throw new Error(response.payload?.error || "Failed to save video in the system")
+        throw new Error(response.payload?.error || `Upload failed with status ${response.status}`)
       }
 
       toast.success("Video uploaded and saved")
