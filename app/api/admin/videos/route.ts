@@ -26,6 +26,77 @@ export async function POST(request: Request) {
   }
 
   try {
+    const contentType = request.headers.get("content-type") || ""
+
+    if (contentType.includes("application/json")) {
+      const body = await request.json()
+      const title = String(body?.title ?? "").trim()
+      const videoUrl = String(body?.video_url ?? "").trim()
+      const orderIndex = Number(body?.order_index ?? 0)
+      const levelNumber = Number(body?.level_number)
+
+      if (!title || !videoUrl || !Number.isFinite(levelNumber) || levelNumber <= 0) {
+        return NextResponse.json({ error: "Missing title, video_url, or level_number" }, { status: 400 })
+      }
+
+      const cookieStore = await cookies()
+      const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                cookieStore.set(name, value, options)
+              })
+            } catch {
+              // ignore
+            }
+          },
+        },
+      })
+
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError || !userData.user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+
+      const { data: userRow, error: userRowError } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", userData.user.id)
+        .maybeSingle()
+
+      if (userRowError) {
+        return NextResponse.json({ error: "Failed to verify user role" }, { status: 500 })
+      }
+
+      if (!isAdminRole(userRow?.role ?? userData.user.user_metadata?.role)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+
+      const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+
+      const { error } = await supabaseAdmin.from("videos").insert([
+        {
+          course_id: "01c2ad78-98fd-44cf-8e7a-9a6e195f4062",
+          title,
+          video_url: videoUrl,
+          order_index: Number.isFinite(orderIndex) ? orderIndex : 0,
+          level: levelNumber,
+        },
+      ])
+
+      if (error) {
+        return NextResponse.json({ error: error.message || "Failed to save video in the system" }, { status: 500 })
+      }
+
+      return NextResponse.json({ success: true })
+    }
+
     const formData = await request.formData()
     const title = String(formData.get("title") ?? "").trim()
     const orderIndex = Number(formData.get("order_index") ?? 0)
