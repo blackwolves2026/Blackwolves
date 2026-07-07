@@ -227,14 +227,34 @@ export default function AdminVideosPage() {
     setUploadProgress(0)
 
     try {
+      const prepareResponse = await fetch("/api/admin/videos", {
+        method: "POST",
+        body: new URLSearchParams({
+          title: title.trim(),
+          order_index: String(Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0),
+          level_number: String(Number(levelId)),
+          fileName: videoFile.name,
+          fileType: videoFile.type || "video/mp4",
+        }),
+      })
+
+      const preparePayload = await prepareResponse.json()
+      if (!prepareResponse.ok || !preparePayload?.success) {
+        throw new Error(preparePayload?.error || "Unable to prepare upload")
+      }
+
       const formData = new FormData()
-      formData.append("title", title.trim())
-      formData.append("order_index", String(Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0))
-      formData.append("level_number", String(Number(levelId)))
       formData.append("file", videoFile)
+      formData.append("upload_preset", preparePayload.fields.upload_preset)
+      formData.append("timestamp", preparePayload.fields.timestamp)
+      formData.append("signature", preparePayload.fields.signature)
+      formData.append("api_key", preparePayload.fields.api_key)
+      formData.append("resource_type", preparePayload.fields.resource_type)
+      formData.append("filename", preparePayload.fields.filename)
+      formData.append("content_type", preparePayload.fields.content_type)
 
       const xhr = new XMLHttpRequest()
-      xhr.open("POST", "/api/admin/videos")
+      xhr.open("POST", preparePayload.uploadUrl)
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
@@ -243,7 +263,7 @@ export default function AdminVideosPage() {
         }
       }
 
-      const response = await new Promise<{ ok: boolean; payload: any; status: number; rawText: string }>((resolve, reject) => {
+      const cloudinaryResponse = await new Promise<{ ok: boolean; payload: any; status: number }>((resolve, reject) => {
         xhr.onload = () => {
           const rawText = xhr.responseText || ""
           let payload: any = {}
@@ -251,17 +271,35 @@ export default function AdminVideosPage() {
           try {
             payload = rawText ? JSON.parse(rawText) : {}
           } catch {
-            payload = { error: rawText || "The server returned an empty or invalid response." }
+            payload = { error: rawText || "Cloudinary returned an invalid response" }
           }
 
-          resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload, status: xhr.status, rawText })
+          resolve({ ok: xhr.status >= 200 && xhr.status < 300, payload, status: xhr.status })
         }
         xhr.onerror = () => reject(new Error("Network error during upload"))
         xhr.send(formData)
       })
 
-      if (!response.ok) {
-        throw new Error(response.payload?.error || `Upload failed with status ${response.status}`)
+      if (!cloudinaryResponse.ok || !cloudinaryResponse.payload?.secure_url) {
+        throw new Error(cloudinaryResponse.payload?.error?.message || "Cloudinary upload failed")
+      }
+
+      const saveResponse = await fetch("/api/admin/videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          video_url: cloudinaryResponse.payload.secure_url,
+          order_index: Number.isFinite(Number(orderIndex)) ? Number(orderIndex) : 0,
+          level_number: Number(levelId),
+        }),
+      })
+
+      const savePayload = await saveResponse.json()
+      if (!saveResponse.ok) {
+        throw new Error(savePayload?.error || "Failed to save video in the system")
       }
 
       toast.success("Video uploaded and saved")
