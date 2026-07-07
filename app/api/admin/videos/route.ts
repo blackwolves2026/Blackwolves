@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
     const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "vortex_upload"
     const timestamp = Math.floor(Date.now() / 1000)
-    const paramsToSign = `source=uw&timestamp=${timestamp}&upload_preset=${uploadPreset}`
+    const paramsToSign = `timestamp=${timestamp}&upload_preset=${uploadPreset}`
     const signature = crypto.createHash("sha1").update(paramsToSign + CLOUDINARY_API_SECRET).digest("hex")
 
     const responsePayload = {
