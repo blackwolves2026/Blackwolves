@@ -72,81 +72,73 @@ export function removeUploadResumeState(file: File) {
   }
 }
 
+function inferMimeType(fileName: string) {
+  const normalized = fileName.toLowerCase()
+
+  if (normalized.endsWith(".mp4")) return "video/mp4"
+  if (normalized.endsWith(".mov") || normalized.endsWith(".qt")) return "video/quicktime"
+  if (normalized.endsWith(".m4v")) return "video/x-m4v"
+  if (normalized.endsWith(".webm")) return "video/webm"
+  if (normalized.endsWith(".avi")) return "video/x-msvideo"
+  if (normalized.endsWith(".mkv")) return "video/x-matroska"
+  if (normalized.endsWith(".3gp")) return "video/3gpp"
+  if (normalized.endsWith(".3g2")) return "video/3gpp2"
+
+  return ""
+}
+
 export async function uploadVideoToCloudinary(
   file: File,
   onProgress?: (pct: number) => void,
-  resumeState?: UploadResumeState,
+  _resumeState?: UploadResumeState,
 ): Promise<CloudinaryUploadResult> {
-  const totalChunks = Math.ceil(file.size / CLOUDINARY_CHUNK_SIZE)
-  let uploadId = resumeState?.uploadId
-  let currentChunk = resumeState?.nextChunk ?? 0
+  const formData = new FormData()
+  const inferredMimeType = inferMimeType(file.name)
+  const contentType = file.type || inferredMimeType || "video/mp4"
 
-  while (currentChunk < totalChunks) {
-    const start = currentChunk * CLOUDINARY_CHUNK_SIZE
-    const end = Math.min(start + CLOUDINARY_CHUNK_SIZE, file.size)
-    const chunk = file.slice(start, end)
-    const formData = new FormData()
-    formData.append("file", chunk)
-    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET)
-    formData.append("chunk_size", String(CLOUDINARY_CHUNK_SIZE))
-    formData.append("chunk_number", String(currentChunk + 1))
-    formData.append("filename", file.name)
-    if (file.type) {
-      formData.append("content_type", file.type)
-    }
-    if (uploadId) {
-      formData.append("upload_id", uploadId)
-    }
+  formData.append("file", file)
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET)
+  formData.append("resource_type", "video")
+  formData.append("filename", file.name)
+  formData.append("content_type", contentType)
 
-    const result = await new Promise<CloudinaryUploadResult>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open("POST", CLOUDINARY_VIDEO_UPLOAD_URL)
+  const result = await new Promise<CloudinaryUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", CLOUDINARY_VIDEO_UPLOAD_URL)
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          const baseProgress = (currentChunk * CLOUDINARY_CHUNK_SIZE) / file.size
-          const chunkProgress = event.loaded / event.total
-          const percentage = Math.min(100, Math.round((baseProgress + chunkProgress / totalChunks) * 100))
-          onProgress(percentage)
-        }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percentage = Math.min(100, Math.round((event.loaded / event.total) * 100))
+        onProgress(percentage)
       }
+    }
 
-      xhr.onload = () => {
-        try {
-          const res = JSON.parse(xhr.responseText)
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(res)
-          } else {
-            reject(new Error(res?.error?.message || `Upload failed with status ${xhr.status}`))
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (!res?.secure_url) {
+            reject(new Error(res?.error?.message || "Cloudinary did not return a secure URL"))
+            return
           }
-        } catch (error) {
-          reject(error)
+          resolve(res)
+        } else {
+          reject(new Error(res?.error?.message || `Upload failed with status ${xhr.status}`))
         }
+      } catch (error) {
+        reject(error)
       }
-
-      xhr.onerror = () => reject(new Error("Network error during Cloudinary upload"))
-      xhr.send(formData)
-    })
-
-    uploadId = result.upload_id ?? uploadId
-    const nextChunk = currentChunk + 1
-    saveUploadResumeState({
-      fileName: file.name,
-      fileSize: file.size,
-      uploadId,
-      nextChunk,
-    })
-
-    if (nextChunk >= totalChunks) {
-      removeUploadResumeState(file)
-      if (!result.secure_url) {
-        throw new Error("Cloudinary did not return a secure URL after the final chunk")
-      }
-      return result
     }
 
-    currentChunk = nextChunk
+    xhr.onerror = () => reject(new Error("Network error during Cloudinary upload"))
+    xhr.send(formData)
+  })
+
+  removeUploadResumeState(file)
+
+  if (!result.secure_url) {
+    throw new Error("Cloudinary did not return a secure URL")
   }
 
-  throw new Error("Unexpected upload state")
+  return result
 }
