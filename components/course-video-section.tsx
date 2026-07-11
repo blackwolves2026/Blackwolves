@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/format"
@@ -46,6 +46,19 @@ export default function CourseVideoSection({
   const [videoError, setVideoError] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [videoQuality, setVideoQuality] = useState<(typeof QUALITY_OPTIONS)[number]["value"]>("Auto")
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  const stopCurrentVideoPlayback = () => {
+    const videoElement = videoRef.current
+    if (!videoElement) return
+    try {
+      videoElement.pause()
+      videoElement.currentTime = 0
+      videoElement.load()
+    } catch {
+      // Ignore browser-specific exceptions while switching sources.
+    }
+  }
 
   useEffect(() => {
     if (selectedVideoId) {
@@ -77,6 +90,7 @@ export default function CourseVideoSection({
   const handleSelectVideo = (videoId: string) => {
     const selectedVideo = videos.find((video) => video.id === videoId)
     if (!selectedVideo || selectedVideo.level == null || !purchasedLevelIds.includes(String(selectedVideo.level))) return
+    stopCurrentVideoPlayback()
     setSelectedVideoId(videoId)
     setVideoError(false)
   }
@@ -145,7 +159,10 @@ export default function CourseVideoSection({
                         size="sm"
                         variant={isActive ? "default" : "outline"}
                         className="min-w-20"
-                        onClick={() => setVideoQuality(option.value)}
+                        onClick={() => {
+                          stopCurrentVideoPlayback()
+                          setVideoQuality(option.value)
+                        }}
                       >
                         {option.label}
                       </Button>
@@ -154,6 +171,8 @@ export default function CourseVideoSection({
                 </div>
                 <div className="relative overflow-hidden rounded-3xl bg-black">
                   <video
+                    key={`${selectedVideo?.id ?? "none"}-${videoQuality}`}
+                    ref={videoRef}
                     controls
                     controlsList="nodownload"
                     playsInline
