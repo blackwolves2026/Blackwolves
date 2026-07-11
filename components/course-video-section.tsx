@@ -28,6 +28,14 @@ interface CourseVideoSectionProps {
   purchasedLevelIds?: string[]
 }
 
+const QUALITY_OPTIONS = [
+  { label: "Auto", value: "Auto" },
+  { label: "360p", value: "360p" },
+  { label: "480p", value: "480p" },
+  { label: "720p", value: "720p" },
+  { label: "1080p", value: "1080p" },
+] as const
+
 export default function CourseVideoSection({
   videos = [],
   levels = [],
@@ -37,6 +45,7 @@ export default function CourseVideoSection({
   const [purchasedLevelIds, setPurchasedLevelIds] = useState<string[]>(purchasedLevelIdsInitially)
   const [videoError, setVideoError] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [videoQuality, setVideoQuality] = useState<(typeof QUALITY_OPTIONS)[number]["value"]>("Auto")
 
   useEffect(() => {
     if (selectedVideoId) {
@@ -103,7 +112,10 @@ export default function CourseVideoSection({
     })
   }
 
-  const streamUrl = selectedVideo ? `/api/videos/stream?video_id=${selectedVideo.id}` : null
+  const streamUrl = useMemo(() => {
+    if (!selectedVideo) return null
+    return `/api/videos/stream?video_id=${selectedVideo.id}&quality=${encodeURIComponent(videoQuality)}`
+  }, [selectedVideo, videoQuality])
 
   return (
     <div className="space-y-6">
@@ -121,19 +133,39 @@ export default function CourseVideoSection({
                 Unable to play the video right now. Please try again or check your internet connection.
               </div>
             ) : (
-              <div className="relative overflow-hidden rounded-3xl bg-black">
-                <video
-                  controls
-                  controlsList="nodownload"
-                  playsInline
-                  onContextMenu={(event) => event.preventDefault()}
-                  onError={() => setVideoError(true)}
-                  className="aspect-video w-full bg-black"
-                  preload="metadata"
-                >
-                  <source src={streamUrl ?? undefined} type="video/mp4" />
-                  <p className="text-sm text-muted-foreground">Your browser does not support video playback.</p>
-                </video>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Quality:</span>
+                  {QUALITY_OPTIONS.map((option) => {
+                    const isActive = videoQuality === option.value
+                    return (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? "default" : "outline"}
+                        className="min-w-20"
+                        onClick={() => setVideoQuality(option.value)}
+                      >
+                        {option.label}
+                      </Button>
+                    )
+                  })}
+                </div>
+                <div className="relative overflow-hidden rounded-3xl bg-black">
+                  <video
+                    controls
+                    controlsList="nodownload"
+                    playsInline
+                    onContextMenu={(event) => event.preventDefault()}
+                    onError={() => setVideoError(true)}
+                    className="aspect-video w-full bg-black"
+                    preload="metadata"
+                  >
+                    <source src={streamUrl ?? undefined} type="video/mp4" />
+                    <p className="text-sm text-muted-foreground">Your browser does not support video playback.</p>
+                  </video>
+                </div>
               </div>
             )
           ) : (
